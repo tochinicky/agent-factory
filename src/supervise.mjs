@@ -4,14 +4,10 @@
  * @module supervise
  */
 import { decide, LABELS } from "./decide.mjs";
+import { pathToFileURL } from "node:url";
 import { github } from "./github.mjs";
 
 const env = process.env;
-const gh = github({ token: env.GITHUB_TOKEN, repo: env.GITHUB_REPOSITORY });
-const config = {
-  enabled: env.FACTORY_ENABLED !== "false",
-  ...(env.FACTORY_MAX_SLOTS ? { maxSlots: Number(env.FACTORY_MAX_SLOTS) } : {}),
-};
 const repoUrl = `https://github.com/${env.GITHUB_REPOSITORY}`;
 
 /**
@@ -37,8 +33,9 @@ async function notify(title, message, click) {
 /**
  * Carries out one action from the decision step.
  * @param {object} a
+ * @param {ReturnType<typeof github>} gh
  */
-async function apply(a) {
+async function apply(a, gh) {
   switch (a.type) {
     case "skip":
       return console.log(`skip: ${a.reason}`);
@@ -79,15 +76,47 @@ async function apply(a) {
   }
 }
 
-await gh.ensureLabels();
-const snapshot = await gh.snapshot(Date.now());
-const actions = decide({ ...snapshot, config });
-console.log(`${snapshot.issues.length} factory issues, ${Object.keys(snapshot.activeRuns).length} active workers, ${actions.length} actions`);
-for (const a of actions) {
-  try {
-    await apply(a);
-  } catch (e) {
-    console.error(`#${a.issue ?? "-"} ${a.type} failed: ${e.message}`);
-    process.exitCode = 1;
+/**
+ * Tells whether this run should only report what it would do. Dry-run lets an operator preview a
+ * tick against the real repository without changing it.
+ * @param {string[]} argv
+ * @param {Record<string, string|undefined>} environ
+ * @returns {boolean}
+ */
+export function isDryRun(argv, environ) {
+  return argv.includes("--dry-run") || environ.FACTORY_DRY_RUN === "true";
+}
+
+/**
+ * Runs one tick: read the snapshot, decide, then act. In dry-run mode it only prints each action
+ * and calls no write method on the client (including ensureLabels and notifications), so the
+ * preview is safe to run against the real repository.
+ * @param {{gh: ReturnType<typeof github>, config: object, dryRun?: boolean, log?: (line: string) => void}} options
+ */
+export async function tick({ gh, config, dryRun = false, log = console.log }) {
+  if (!dryRun) await gh.ensureLabels();
+  const snapshot = await gh.snapshot(Date.now());
+  const actions = decide({ ...snapshot, config });
+  log(`${dryRun ? "[dry-run] " : ""}${snapshot.issues.length} factory issues, ${Object.keys(snapshot.activeRuns).length} active workers, ${actions.length} actions`);
+  for (const a of actions) {
+    if (dryRun) {
+      log(`[dry-run] would ${a.type}: ${JSON.stringify(a)}`);
+      continue;
+    }
+    try {
+      await apply(a, gh);
+    } catch (e) {
+      console.error(`#${a.issue ?? "-"} ${a.type} failed: ${e.message}`);
+      process.exitCode = 1;
+    }
   }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const config = {
+    enabled: env.FACTORY_ENABLED !== "false",
+    ...(env.FACTORY_MAX_SLOTS ? { maxSlots: Number(env.FACTORY_MAX_SLOTS) } : {}),
+  };
+  const gh = github({ token: env.GITHUB_TOKEN, repo: env.GITHUB_REPOSITORY });
+  await tick({ gh, config, dryRun: isDryRun(process.argv.slice(2), env) });
 }
