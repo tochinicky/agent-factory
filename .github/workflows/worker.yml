@@ -112,7 +112,8 @@ jobs:
           git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
           if [ "$MODE" = "implement" ] && [ -z "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
             title="$(gh issue view "$ISSUE" --json title -q .title)"
-            { cat .factory/pr-body.md 2>/dev/null || echo "Implements the issue."; printf '\n\nCloses #%s\n' "$ISSUE"; } > .factory/body.md
+            cat .factory/pr-body.md 2>/dev/null > .factory/body.md || echo "Implements the issue." > .factory/body.md
+            grep -qiE "(closes|fixes|resolves) #$ISSUE\b" .factory/body.md || printf '\n\nCloses #%s\n' "$ISSUE" >> .factory/body.md
             gh pr create --base main --head "$BRANCH" --title "$title" --body-file .factory/body.md
           elif [ "$MODE" = "followup" ] && [ -s .factory/reply.md ]; then
             gh pr comment "$PR" --body-file .factory/reply.md

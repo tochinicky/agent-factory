@@ -69,6 +69,10 @@ single issue `factory:pause`.
 - Only people with write access can label issues, so only they can put work on the queue.
 - Review feedback reaches a worker only from `OWNER`, `MEMBER` or `COLLABORATOR` authors. On a public
   repo anyone can comment, and a comment would otherwise be a way to give the agent instructions.
+- One review bot is allowed through: CodeRabbit (`FACTORY_REVIEW_BOTS`, default `coderabbitai[bot]`),
+  and only its inline comments on lines of the diff. Its summaries are not sent to workers. The
+  follow-up cap and the no-progress checks stop a reviewer bot and a worker from answering each other
+  forever.
 - The worker's tools are an allowlist (edit files, run tests, local git). It cannot push or call the
   GitHub API for writes; the push and the PR come from a fixed script step.
 - Workers never merge. `main` is protected and needs a human.

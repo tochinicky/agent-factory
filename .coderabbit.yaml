@@ -1,0 +1,8 @@
+# CodeRabbit reviews every PR, including the ones workers open. Its inline comments are forwarded
+# to the worker by the supervisor (see README, Security); everything else is for the human reviewer.
+language: en-GB
+reviews:
+  profile: chill
+  auto_review:
+    enabled: true
+    drafts: false

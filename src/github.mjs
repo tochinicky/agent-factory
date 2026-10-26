@@ -8,6 +8,23 @@ import { LABELS } from "./decide.mjs";
 const STATE_MARKER = "factory-state:";
 const TRUSTED = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const CI_CHECK = "test";
+const REVIEW_BOTS = new Set((process.env.FACTORY_REVIEW_BOTS ?? "coderabbitai[bot]").split(",").map((b) => b.trim()).filter(Boolean));
+
+/**
+ * Decides whether a PR comment may reach a worker's prompt. People need write access, because on a
+ * public repo anyone can comment and a comment is a way to give the agent instructions. Review
+ * bots on the allowlist count only for inline comments on a line of the diff: their summaries and
+ * review bodies are long, rarely actionable, and would cost a worker run each time they change.
+ * @param {{user?: {login: string, type: string}, author_association?: string, body?: string}} comment
+ * @param {"issue"|"inline"|"review"} kind where the comment was posted
+ * @param {Set<string>} [reviewBots]
+ * @returns {boolean}
+ */
+export function isFeedback(comment, kind, reviewBots = REVIEW_BOTS) {
+  if (!comment.body?.trim() || !comment.user) return false;
+  if (comment.user.type === "Bot") return kind === "inline" && reviewBots.has(comment.user.login);
+  return TRUSTED.has(comment.author_association);
+}
 
 /**
  * Creates a client bound to one repository.
@@ -60,8 +77,7 @@ export function github({ token, repo, api = "https://api.github.com" }) {
   }
 
   /**
-   * Collects review feedback on a PR from people with write access only. Comments from anyone
-   * else never reach a worker's prompt, because on a public repo they could carry instructions.
+   * Collects the review feedback on a PR that may reach a worker; see {@link isFeedback}.
    * @param {number} pr
    */
   async function feedbackFor(pr) {
@@ -70,12 +86,11 @@ export function github({ token, repo, api = "https://api.github.com" }) {
       get(`/pulls/${pr}/comments?per_page=100`),
       get(`/pulls/${pr}/reviews?per_page=100`),
     ]);
-    const fromHumans = (x) => TRUSTED.has(x.author_association) && x.user?.type !== "Bot" && x.body?.trim();
     const where = (x) => (x.path ? ` (on ${x.path}${x.line ? `:${x.line}` : ""})` : "");
     return [
-      ...issueComments.filter(fromHumans).map((x) => ({ id: `c${x.id}`, author: x.user.login, body: x.body, at: x.created_at })),
-      ...reviewComments.filter(fromHumans).map((x) => ({ id: `r${x.id}`, author: x.user.login, body: `${x.body}${where(x)}`, at: x.created_at })),
-      ...reviews.filter(fromHumans).map((x) => ({ id: `v${x.id}`, author: x.user.login, body: x.body, at: x.submitted_at })),
+      ...issueComments.filter((x) => isFeedback(x, "issue")).map((x) => ({ id: `c${x.id}`, author: x.user.login, body: x.body, at: x.created_at })),
+      ...reviewComments.filter((x) => isFeedback(x, "inline")).map((x) => ({ id: `r${x.id}`, author: x.user.login, body: `${x.body}${where(x)}`, at: x.created_at })),
+      ...reviews.filter((x) => isFeedback(x, "review")).map((x) => ({ id: `v${x.id}`, author: x.user.login, body: x.body, at: x.submitted_at })),
     ].sort((a, b) => a.at.localeCompare(b.at));
   }
 
