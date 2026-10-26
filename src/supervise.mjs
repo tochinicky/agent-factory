@@ -6,6 +6,8 @@
 import { decide, LABELS } from "./decide.mjs";
 import { pathToFileURL } from "node:url";
 import { github } from "./github.mjs";
+import { summaryMarkdown } from "./summary.mjs";
+import { appendFileSync } from "node:fs";
 
 const env = process.env;
 const repoUrl = `https://github.com/${env.GITHUB_REPOSITORY}`;
@@ -130,6 +132,10 @@ export async function tick({ gh, config, dryRun = false, log = console.log }) {
       console.error(`#${a.issue ?? "-"} ${a.type} failed: ${e.message}`);
       process.exitCode = 1;
     }
+  }
+  if (env.GITHUB_STEP_SUMMARY) {
+    const counts = { issues: snapshot.issues.length, workers: Object.keys(snapshot.activeRuns).length };
+    appendFileSync(env.GITHUB_STEP_SUMMARY, summaryMarkdown(counts, actions));
   }
 }
 
