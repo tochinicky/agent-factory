@@ -42,6 +42,9 @@ jobs:
       PR: ${{ inputs.pr }}
       MODE: ${{ inputs.mode }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # No terminal in Actions: without this, `git rebase --continue` waits for an editor and the
+      # worker ends mid-rebase with nothing to push.
+      GIT_EDITOR: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,6 +108,11 @@ jobs:
       - name: Push, open the PR and start CI
         run: |
           git fetch origin main
+          if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+            git status --short
+            echo "::error::The worker left a rebase unfinished; the supervisor will retry or escalate."
+            exit 1
+          fi
           if [ "$(git rev-list --count origin/main..HEAD)" = "0" ]; then
             echo "::error::The worker made no commits; the supervisor will retry or escalate."
             exit 1

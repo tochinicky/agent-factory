@@ -15,6 +15,7 @@ const REVIEW_BOTS = new Set((process.env.FACTORY_REVIEW_BOTS ?? "coderabbitai[bo
  * public repo anyone can comment and a comment is a way to give the agent instructions. Review
  * bots on the allowlist count only for inline comments on a line of the diff: their summaries and
  * review bodies are long, rarely actionable, and would cost a worker run each time they change.
+ * Commands addressed to a review bot (`@coderabbitai review`) are for the bot, not the worker.
  * @param {{user?: {login: string, type: string}, author_association?: string, body?: string}} comment
  * @param {"issue"|"inline"|"review"} kind where the comment was posted
  * @param {Set<string>} [reviewBots]
@@ -22,6 +23,7 @@ const REVIEW_BOTS = new Set((process.env.FACTORY_REVIEW_BOTS ?? "coderabbitai[bo
  */
 export function isFeedback(comment, kind, reviewBots = REVIEW_BOTS) {
   if (!comment.body?.trim() || !comment.user) return false;
+  if (/^\s*@coderabbitai\b/i.test(comment.body)) return false;
   if (comment.user.type === "Bot") return kind === "inline" && reviewBots.has(comment.user.login);
   return TRUSTED.has(comment.author_association);
 }

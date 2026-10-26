@@ -27,3 +27,7 @@ test("other bots, including the factory's own, are ignored", () => {
 test("empty comments are ignored", () => {
   assert.equal(isFeedback({ ...human("OWNER"), body: "  " }, "issue", bots), false);
 });
+
+test("commands to a review bot are not feedback", () => {
+  assert.equal(isFeedback({ ...human("OWNER"), body: "@coderabbitai review" }, "issue", bots), false);
+});
