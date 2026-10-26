@@ -1,0 +1,116 @@
+name: worker
+run-name: "worker #${{ inputs.issue }} (${{ inputs.mode }})"
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+      mode:
+        description: implement or followup
+        required: true
+        default: implement
+      feedback:
+        description: Bundled follow-up from the supervisor
+        required: false
+        default: ""
+      pr:
+        description: PR number, for follow-ups
+        required: false
+        default: ""
+
+# Never two workers on one issue at once; a second dispatch waits for the first.
+concurrency:
+  group: worker-${{ inputs.issue }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  id-token: write
+
+jobs:
+  work:
+    runs-on: ubuntu-latest
+    # Shorter than the supervisor's 45-minute lease, so the lease only catches a hung runner.
+    timeout-minutes: 40
+    env:
+      BRANCH: factory/issue-${{ inputs.issue }}
+      ISSUE: ${{ inputs.issue }}
+      PR: ${{ inputs.pr }}
+      MODE: ${{ inputs.mode }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: factory/issue-${{ inputs.issue }}
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - name: Prepare
+        run: |
+          git config user.name "agent-factory[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p .factory
+
+      - name: Implement
+        if: inputs.mode == 'implement'
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are a worker in this repository's agent factory. Your ticket is issue #${{ inputs.issue }}.
+            Read it with `gh issue view ${{ inputs.issue }}`, and read CLAUDE.md before you change anything.
+
+            - Implement only what the issue asks, on the branch that is already checked out.
+            - If you notice something else worth changing, do not change it. List it under
+              "Suggested follow-ups" in the PR description instead.
+            - Add or update tests, and run `npm test` until it passes.
+            - Commit with a message that says what changed and why. Do not push; the workflow pushes.
+            - Write the PR description to .factory/pr-body.md: what changed, how you tested it,
+              and the suggested follow-ups (or "None").
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm test:*),Bash(npm run:*),Bash(node:*),Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*)"
+
+      - name: Follow up
+        if: inputs.mode == 'followup'
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are a worker in this repository's agent factory. Your ticket is issue #${{ inputs.issue }},
+            and its PR is #${{ inputs.pr }}. Read CLAUDE.md first. The supervisor collected this feedback:
+
+            ${{ inputs.feedback }}
+
+            - Address every point on the branch that is already checked out, and nothing else.
+            - If the branch conflicts with main, run `git fetch origin main` and `git rebase origin/main`,
+              and resolve the conflicts.
+            - Run `npm test` until it passes, then commit. Do not push; the workflow pushes.
+            - Write a short reply to .factory/reply.md: one line per point, saying what you changed.
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(npm test:*),Bash(npm run:*),Bash(node:*),Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git fetch:*),Bash(git rebase:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
+
+      - name: Push, open the PR and start CI
+        run: |
+          git fetch origin main
+          if [ "$(git rev-list --count origin/main..HEAD)" = "0" ]; then
+            echo "::error::The worker made no commits; the supervisor will retry or escalate."
+            exit 1
+          fi
+          git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
+          if [ "$MODE" = "implement" ] && [ -z "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
+            title="$(gh issue view "$ISSUE" --json title -q .title)"
+            { cat .factory/pr-body.md 2>/dev/null || echo "Implements the issue."; printf '\n\nCloses #%s\n' "$ISSUE"; } > .factory/body.md
+            gh pr create --base main --head "$BRANCH" --title "$title" --body-file .factory/body.md
+          elif [ "$MODE" = "followup" ] && [ -s .factory/reply.md ]; then
+            gh pr comment "$PR" --body-file .factory/reply.md
+          fi
+          gh workflow run ci.yml --ref "$BRANCH"

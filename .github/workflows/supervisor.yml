@@ -1,0 +1,33 @@
+name: supervisor
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+# One tick at a time. A tick that is still running makes the next one wait instead of
+# deciding on the same snapshot twice.
+concurrency:
+  group: factory-supervisor
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the claim branch
+  issues: write
+  pull-requests: read
+  actions: write # dispatch workers and CI, cancel runs past their lease
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - run: node src/supervise.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FACTORY_ENABLED: ${{ vars.FACTORY_ENABLED }}
+          FACTORY_MAX_SLOTS: ${{ vars.FACTORY_MAX_SLOTS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}

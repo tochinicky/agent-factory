@@ -1,0 +1,13 @@
+{
+  "name": "agent-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A GitHub Actions supervisor that runs Claude Code workers on issues and keeps them from colliding or getting stuck.",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/",
+    "supervise": "node src/supervise.mjs"
+  }
+}
