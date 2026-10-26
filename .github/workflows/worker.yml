@@ -62,6 +62,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Workers are dispatched by the supervisor, which runs as github-actions.
+          allowed_bots: github-actions
           prompt: |
             You are a worker in this repository's agent factory. Your ticket is issue #${{ inputs.issue }}.
             Read it with `gh issue view ${{ inputs.issue }}`, and read CLAUDE.md before you change anything.
@@ -83,6 +85,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Workers are dispatched by the supervisor, which runs as github-actions.
+          allowed_bots: github-actions
           prompt: |
             You are a worker in this repository's agent factory. Your ticket is issue #${{ inputs.issue }},
             and its PR is #${{ inputs.pr }}. Read CLAUDE.md first. The supervisor collected this feedback:
