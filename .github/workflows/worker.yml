@@ -119,3 +119,5 @@ jobs:
             gh pr comment "$PR" --body-file .factory/reply.md
           fi
           gh workflow run ci.yml --ref "$BRANCH"
+          # CodeRabbit skips PRs opened by bots unless asked, so ask after every push.
+          gh pr comment "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" --body "@coderabbitai review"
