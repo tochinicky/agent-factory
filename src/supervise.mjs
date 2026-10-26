@@ -88,6 +88,27 @@ export function isDryRun(argv, environ) {
 }
 
 /**
+ * Names the required variables that are unset, so the CLI can stop with a clear message instead
+ * of failing later with an opaque HTTP error.
+ * @param {Record<string, string|undefined>} environ
+ * @returns {string[]}
+ */
+export function missingEnv(environ) {
+  return ["GITHUB_TOKEN", "GITHUB_REPOSITORY"].filter((k) => !environ[k]);
+}
+
+/**
+ * Summarises an action as one short line for the dry-run preview, leaving out the state blob.
+ * @param {object} a
+ * @returns {string}
+ */
+export function describeAction(a) {
+  const target = a.issue ? ` #${a.issue}` : a.runId ? ` run ${a.runId}` : "";
+  const detail = a.branch ?? a.mode ?? a.reason;
+  return `would ${a.type}${target}${detail ? ` (${detail})` : ""}`;
+}
+
+/**
  * Runs one tick: read the snapshot, decide, then act. In dry-run mode it only prints each action
  * and calls no write method on the client (including ensureLabels and notifications), so the
  * preview is safe to run against the real repository.
@@ -100,7 +121,7 @@ export async function tick({ gh, config, dryRun = false, log = console.log }) {
   log(`${dryRun ? "[dry-run] " : ""}${snapshot.issues.length} factory issues, ${Object.keys(snapshot.activeRuns).length} active workers, ${actions.length} actions`);
   for (const a of actions) {
     if (dryRun) {
-      log(`[dry-run] would ${a.type}: ${JSON.stringify(a)}`);
+      log(`[dry-run] ${describeAction(a)}`);
       continue;
     }
     try {
@@ -113,6 +134,11 @@ export async function tick({ gh, config, dryRun = false, log = console.log }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const missing = missingEnv(env);
+  if (missing.length) {
+    console.error(`Missing required environment variable(s): ${missing.join(", ")}`);
+    process.exit(1);
+  }
   const config = {
     enabled: env.FACTORY_ENABLED !== "false",
     ...(env.FACTORY_MAX_SLOTS ? { maxSlots: Number(env.FACTORY_MAX_SLOTS) } : {}),

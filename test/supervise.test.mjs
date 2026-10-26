@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isDryRun, tick } from "../src/supervise.mjs";
+import { describeAction, isDryRun, missingEnv, tick } from "../src/supervise.mjs";
 
 const WRITES = ["ensureLabels", "claim", "saveState", "relabel", "comment", "dispatchWorker", "dispatchCi", "cancelRun"];
 
@@ -23,7 +23,17 @@ test("dry-run calls no write method and prints the planned actions", async () =>
   const lines = [];
   await tick({ gh, config: { enabled: true }, dryRun: true, log: (l) => lines.push(l) });
   assert.deepEqual(calls, []);
-  assert.ok(lines.some((l) => l.includes("would claim")), lines.join("\n"));
+  assert.ok(lines.includes("[dry-run] would claim #7 (factory/issue-7)"), lines.join("\n"));
+});
+
+test("missingEnv names each unset variable", () => {
+  assert.deepEqual(missingEnv({}), ["GITHUB_TOKEN", "GITHUB_REPOSITORY"]);
+  assert.deepEqual(missingEnv({ GITHUB_TOKEN: "x", GITHUB_REPOSITORY: "o/r" }), []);
+});
+
+test("describeAction omits the state blob", () => {
+  const line = describeAction({ type: "claim", issue: 7, branch: "factory/issue-7", state: { attempt: 1 } });
+  assert.equal(line, "would claim #7 (factory/issue-7)");
 });
 
 test("a normal tick does write", async () => {
