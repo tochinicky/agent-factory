@@ -86,6 +86,13 @@ single issue `factory:pause`.
 3. Settings → Actions → General: allow GitHub Actions to create pull requests.
 4. Label an issue `factory:ready`, and either wait for the next tick or run
    `gh workflow run supervisor.yml`.
+5. Optional: preview a tick without changing anything with `node src/supervise.mjs --dry-run`
+   (or `FACTORY_DRY_RUN=true`). It prints each action it would take and makes no writes: no labels,
+   comments, branches, dispatches, cancels or notifications. Locally it needs both variables:
+
+   ```
+   GITHUB_TOKEN=$(gh auth token) GITHUB_REPOSITORY=<owner>/<repo> node src/supervise.mjs --dry-run
+   ```
 
 ## Run the tests
 
